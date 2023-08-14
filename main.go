@@ -89,7 +89,7 @@ func initializePool(host string) {
                 panic(err)
         }
 
-        ips = append(ips, ips...) // Double the pool
+        // ips = append(ips, ips...) // Double the pool
         // ips = append(ips, ips...) // Double it again
 
         log.Printf("Found %d IPs for host %s", len(ips), host)
