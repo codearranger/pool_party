@@ -146,7 +146,7 @@ func main() {
         if err != nil {
                 panic(err)
         }
-        log.Println("Listening on %v", listener.Addr())
+        log.Printf("Listening on %v", listener.Addr())
         defer listener.Close()
 
         for {   
