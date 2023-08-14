@@ -139,6 +139,9 @@ func handleClient(conn net.Conn) {
 }
 
 func main() {
+
+        log.SetFlags(log.Lshortfile | log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC)
+
         rand.Seed(time.Now().UnixNano()) // Initialize random seed
         initializePool("mainnet-pociot.helium.io")
 
