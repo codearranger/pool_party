@@ -1,21 +1,24 @@
 package main
 
 import (
-        "io"
-        "log"
-        "math/rand"
-        "net"
-        "sync"
-        "time"
+	"flag"
+	"io"
+	"log"
+	"math/rand"
+	"net"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 var connectionPool []*net.TCPConn
 var poolLock sync.Mutex
 var ips []net.IP
 
-func createConnection(ip net.IP) {
-        addr := net.TCPAddr{IP: ip, Port: 9080}
-        conn, err := net.DialTCP("tcp", nil, &addr)
+func createConnection(ip net.IP, port int) {
+	addr := net.TCPAddr{IP: ip, Port: port}
+	conn, err := net.DialTCP("tcp", nil, &addr)
         if err != nil {
                 log.Printf("Failed to connect to %v: %v", addr, err)
                 return
@@ -36,6 +39,15 @@ func createConnection(ip net.IP) {
                 conn.Close()
                 return
         }
+
+/*
+        // Disable Nagle's algorithm to reduce latency
+        if err := conn.SetNoDelay(true); err != nil {
+                log.Printf("Failed to disable Nagle's algorithm for %v: %v", conn.RemoteAddr(), err)
+                conn.Close()
+                return
+        }
+*/
 
         poolLock.Lock()
         connectionPool = append(connectionPool, conn)
@@ -62,41 +74,47 @@ func getConnectionFromPool() *net.TCPConn {
 }
 
 func removeFromPool(conn *net.TCPConn) {
-        poolLock.Lock()
-        defer poolLock.Unlock()
+	poolLock.Lock()
+	defer poolLock.Unlock()
 
-        var ip net.IP
-        for i, c := range connectionPool {
-                if c == conn {
-                        ip = c.RemoteAddr().(*net.TCPAddr).IP
-                        log.Printf("Removing connection from pool: %v", conn.RemoteAddr())
-                        connectionPool = append(connectionPool[:i], connectionPool[i+1:]...)
-                        break
-                }
-        }
+	var ip net.IP
+	var port int
+	for i, c := range connectionPool {
+		if c == conn {
+			ip = c.RemoteAddr().(*net.TCPAddr).IP
+			port = c.RemoteAddr().(*net.TCPAddr).Port
+			log.Printf("Removing connection from pool: %v", conn.RemoteAddr())
+			connectionPool = append(connectionPool[:i], connectionPool[i+1:]...)
+			break
+		}
+	}
 
-        // Recreate the connection using the same IP
-        if ip != nil {
-                log.Printf("Recreating connection to: %v", ip)
-                go createConnection(ip)
-        }
+	// Recreate the connection using the same IP and port
+	if ip != nil {
+		log.Printf("Recreating connection to: %v", ip)
+		go createConnection(ip, port)
+	}
 }
 
-func initializePool(host string) {
-        var err error
-        ips, err = net.LookupIP(host)
-        if err != nil {
-                panic(err)
-        }
+func initializePool(target string) {
+	hostPort := strings.Split(target, ":")
+	host := hostPort[0]
+	port, err := strconv.Atoi(hostPort[1])
+	if err != nil {
+		log.Fatalf("Invalid port in target %s: %v", target, err)
+	}
 
-        // ips = append(ips, ips...) // Double the pool
-        // ips = append(ips, ips...) // Double it again
+	ips, err = net.LookupIP(host)
+	if err != nil {
+		panic(err)
+	}
 
-        log.Printf("Found %d IPs for host %s", len(ips), host)
-        for _, ip := range ips {
-                createConnection(ip)
-        }
+	log.Printf("Found %d IPs for host %s", len(ips), host)
+	for _, ip := range ips {
+		createConnection(ip, port)
+	}
 }
+
 
 func forward(src, dst net.Conn) {
         defer src.Close()
@@ -139,13 +157,17 @@ func handleClient(conn net.Conn) {
 }
 
 func main() {
+	target := flag.String("target", "mainnet-pociot.helium.io:9080", "The target host and port to connect to")
+	listenAddr := flag.String("listen", "0.0.0.0:9080", "The IP and port to listen on")
 
-        log.SetFlags(log.Lshortfile | log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC)
+	flag.Parse() // Parse the command-line arguments
 
-        rand.Seed(time.Now().UnixNano()) // Initialize random seed
-        initializePool("mainnet-pociot.helium.io")
+	log.SetFlags(log.Lshortfile | log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC)
 
-        listener, err := net.Listen("tcp", "0.0.0.0:9080")
+	rand.Seed(time.Now().UnixNano()) // Initialize random seed
+	initializePool(*target)
+
+	listener, err := net.Listen("tcp", *listenAddr)
         if err != nil {
                 panic(err)
         }
