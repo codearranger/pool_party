@@ -145,7 +145,7 @@ func main() {
         rand.Seed(time.Now().UnixNano()) // Initialize random seed
         initializePool("mainnet-pociot.helium.io")
 
-        listener, err := net.Listen("tcp", "127.0.0.1:9080")
+        listener, err := net.Listen("tcp", "0.0.0.0:9080")
         if err != nil {
                 panic(err)
         }
