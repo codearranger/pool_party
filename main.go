@@ -158,7 +158,7 @@ func handleClient(conn net.Conn) {
 
 func main() {
 	target := flag.String("target", "mainnet-pociot.helium.io:9080", "The target host and port to connect to")
-	listenAddr := flag.String("listen", "0.0.0.0:9080", "The IP and port to listen on")
+	listenAddr := flag.String("listen", "127.0.0.1:9080", "The IP and port to listen on")
 
 	flag.Parse() // Parse the command-line arguments
 
@@ -167,21 +167,26 @@ func main() {
 	rand.Seed(time.Now().UnixNano()) // Initialize random seed
 	initializePool(*target)
 
-	listener, err := net.Listen("tcp", *listenAddr)
-        if err != nil {
-                panic(err)
-        }
-        log.Printf("Listening on %v", listener.Addr())
-        defer listener.Close()
+	tcpAddr, err := net.ResolveTCPAddr("tcp4", *listenAddr)
+	if err != nil {
+		panic(err)
+	}
 
-        for {   
-                conn, err := listener.Accept()
-                if err != nil {
-                        log.Println("Failed to accept connection:", err)
-                        time.Sleep(1 * time.Second)
-                        continue
-                }
-                log.Printf("Accepted client connection: %v", conn.RemoteAddr())
-                go handleClient(conn)
-        }
+	listener, err := net.ListenTCP("tcp4", tcpAddr)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("Listening on %v", listener.Addr())
+	defer listener.Close()
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Println("Failed to accept connection:", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		log.Printf("Accepted client connection: %v", conn.RemoteAddr())
+		go handleClient(conn)
+	}
 }
