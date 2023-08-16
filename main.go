@@ -33,7 +33,7 @@ func createConnection(ip net.IP, port int) {
         }
 
         // Set the keep-alive period
-        keepAlivePeriod := 3 * time.Second // You can adjust this value
+        keepAlivePeriod := 30 * time.Second // You can adjust this value
         if err := conn.SetKeepAlivePeriod(keepAlivePeriod); err != nil {
                 log.Printf("Failed to set keep-alive period for %v: %v", conn.RemoteAddr(), err)
                 conn.Close()
