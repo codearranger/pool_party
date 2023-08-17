@@ -13,7 +13,7 @@ sudo apt install golang && go build
 ```
 Usage of pool_party:
   -listen string
-        The IP and port to listen on (default "0.0.0.0:9080")
+        The IP and port to listen on (default "127.0.0.1:9080")
   -target string
         The target host and port to connect to (default "mainnet-pociot.helium.io:9080")
 ```
