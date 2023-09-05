@@ -71,6 +71,11 @@ func getConnectionFromPool() *net.TCPConn {
 		return nil
 	}
 
+        log.Println("Current pool members:")
+        for i, conn := range connectionPool {
+                log.Printf("  Member %d: %v", i, conn.RemoteAddr())
+        }
+	
 	conn := connectionPool[rand.Intn(len(connectionPool))]
 	log.Printf("Retrieved connection from pool: %v", conn.RemoteAddr())
 	return conn
