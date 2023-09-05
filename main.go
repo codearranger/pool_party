@@ -17,6 +17,7 @@ var poolLock sync.Mutex
 var ips []net.IP
 var targetHost string
 var targetPort int
+var initialPoolSize int
 
 func emptyConnectionPool() {
 	poolLock.Lock()
@@ -91,12 +92,21 @@ func initializePool(target string) {
 			poolLock.Unlock()
 		}
 	}
+
+	initialPoolSize = len(connectionPool)
+	log.Printf("Initialized pool with %d members", initialPoolSize)
+
 }
 
 func getConnectionFromPool() *net.TCPConn {
 	poolLock.Lock()
 	defer poolLock.Unlock()
 
+	if len(connectionPool) < initialPoolSize {
+		log.Printf("Pool size %d < initial %d, reinitializing", len(connectionPool), initialPoolSize) 
+		initializePool(targetHost + ":" + strconv.Itoa(targetPort))
+	}
+	
 	if len(connectionPool) == 0 {
 		log.Println("No connections available in pool")
 		return nil
@@ -113,6 +123,10 @@ func getConnectionFromPool() *net.TCPConn {
 func replaceConnectionInPool(badConn *net.TCPConn) {
 	poolLock.Lock()
 	defer poolLock.Unlock()
+
+	if len(connectionPool) < initialPoolSize {
+		initializePool(targetHost + ":" + strconv.Itoa(targetPort)) 
+	}
 
 	for i, conn := range connectionPool {
 		if conn == badConn {
