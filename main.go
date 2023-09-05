@@ -15,15 +15,17 @@ import (
 var connectionPool []*net.TCPConn
 var poolLock sync.Mutex
 var ips []net.IP
+var targetHost string
+var targetPort int
 
 func createConnection(ip net.IP, port int) {
 	addr := net.TCPAddr{IP: ip, Port: port}
 	conn, err := net.DialTCP("tcp", nil, &addr)
-        if err != nil {
-                log.Printf("Failed to connect to %v: %v", addr, err)
-                return
-        }
-        log.Printf("Connected to %v", addr)
+	if err != nil {
+		log.Printf("Failed to connect to %v: %v", addr, err)
+		return
+	}
+	log.Printf("Connected to %v", addr)
 
         // Enable TCP keep-alive
         if err := conn.SetKeepAlive(true); err != nil {
@@ -48,52 +50,30 @@ func createConnection(ip net.IP, port int) {
                 return
         }
 */
-
-        poolLock.Lock()
-        connectionPool = append(connectionPool, conn)
-        poolLock.Unlock()
+	
+	poolLock.Lock()
+	connectionPool = append(connectionPool, conn)
+	poolLock.Unlock()
 }
 
 func getConnectionFromPool() *net.TCPConn {
-        poolLock.Lock()
-        defer poolLock.Unlock()
-
-        if len(connectionPool) == 0 {
-                log.Println("No connections available in the pool")
-                return nil
-        }
-
-        log.Println("Current pool members:")
-        for i, conn := range connectionPool {
-                log.Printf("  Member %d: %v", i, conn.RemoteAddr())
-        }
-
-        conn := connectionPool[rand.Intn(len(connectionPool))]
-        log.Printf("Retrieved connection from pool: %v", conn.RemoteAddr())
-        return conn
-}
-
-func removeFromPool(conn *net.TCPConn) {
 	poolLock.Lock()
 	defer poolLock.Unlock()
 
-	var ip net.IP
-	var port int
-	for i, c := range connectionPool {
-		if c == conn {
-			ip = c.RemoteAddr().(*net.TCPAddr).IP
-			port = c.RemoteAddr().(*net.TCPAddr).Port
-			log.Printf("Removing connection from pool: %v", conn.RemoteAddr())
-			connectionPool = append(connectionPool[:i], connectionPool[i+1:]...)
-			break
-		}
+	// Repopulate the pool if it drops below initial size
+	if len(connectionPool) < len(ips) {
+		log.Println("Repopulating connection pool...")
+		initializePool(targetHost + ":" + strconv.Itoa(targetPort))
 	}
 
-	// Recreate the connection using the same IP and port
-	if ip != nil {
-		log.Printf("Recreating connection to: %v", ip)
-		go createConnection(ip, port)
+	if len(connectionPool) == 0 {
+		log.Println("No connections available in the pool")
+		return nil
 	}
+
+	conn := connectionPool[rand.Intn(len(connectionPool))]
+	log.Printf("Retrieved connection from pool: %v", conn.RemoteAddr())
+	return conn
 }
 
 func initializePool(target string) {
@@ -103,6 +83,10 @@ func initializePool(target string) {
 	if err != nil {
 		log.Fatalf("Invalid port in target %s: %v", target, err)
 	}
+
+	// Update global variables for targetHost and targetPort
+	targetHost = host
+	targetPort = port
 
 	ips, err = net.LookupIP(host)
 	if err != nil {
@@ -115,45 +99,38 @@ func initializePool(target string) {
 	}
 }
 
-
 func forward(src, dst net.Conn) {
-        defer src.Close()
-        defer dst.Close()
+	defer src.Close()
+	defer dst.Close()
 
-        buf := make([]byte, 1024)
-        for {   
-                n, err := src.Read(buf)
-                if err != nil {
-                        if err != io.EOF {
-                                log.Printf("Failed to read from %v: %v", src.RemoteAddr(), err)
-                        }
-                        if tcpConn, ok := dst.(*net.TCPConn); ok {
-                                removeFromPool(tcpConn)
-                        }
-                        return
-                }
+	buf := make([]byte, 1024)
+	for {
+		n, err := src.Read(buf)
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("Failed to read from %v: %v", src.RemoteAddr(), err)
+			}
+			return
+		}
 
-                _, err = dst.Write(buf[:n])
-                if err != nil {
-                        log.Printf("Failed to write to %v: %v", dst.RemoteAddr(), err)
-                        if tcpConn, ok := dst.(*net.TCPConn); ok {
-                                removeFromPool(tcpConn)
-                        }
-                        return
-                }
-        }
+		_, err = dst.Write(buf[:n])
+		if err != nil {
+			log.Printf("Failed to write to %v: %v", dst.RemoteAddr(), err)
+			return
+		}
+	}
 }
 
 func handleClient(conn net.Conn) {
-        poolConn := getConnectionFromPool()
-        if poolConn == nil {
-                log.Println("Failed to get connection from pool")
-                conn.Close()
-                return
-        }
+	poolConn := getConnectionFromPool()
+	if poolConn == nil {
+		log.Println("Failed to get connection from pool")
+		conn.Close()
+		return
+	}
 
-        go forward(conn, poolConn)
-        go forward(poolConn, conn)
+	go forward(conn, poolConn)
+	go forward(poolConn, conn)
 }
 
 func main() {
