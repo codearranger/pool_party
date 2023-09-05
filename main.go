@@ -19,86 +19,54 @@ var targetHost string
 var targetPort int
 
 func emptyConnectionPool() {
-       poolLock.Lock()
-       defer poolLock.Unlock()
+	poolLock.Lock()
+	defer poolLock.Unlock()
 
-       for _, conn := range connectionPool {
-               if conn != nil {
-                       conn.Close()
-                       log.Printf("Closed connection to %v", conn.RemoteAddr())
-               }
-       }
+	for _, conn := range connectionPool {
+		if conn != nil {
+			conn.Close()
+			log.Printf("Closed connection to %v", conn.RemoteAddr())
+		}
+	}
 
-       connectionPool = []*net.TCPConn{}
-       log.Println("Connection pool emptied.")
+	connectionPool = []*net.TCPConn{}
+	log.Println("Connection pool emptied.")
 }
 
-func createConnection(ip net.IP, port int) {
+func createConnection(ip net.IP, port int) *net.TCPConn {
 	addr := net.TCPAddr{IP: ip, Port: port}
 	conn, err := net.DialTCP("tcp", nil, &addr)
 	if err != nil {
 		log.Printf("Failed to connect to %v: %v", addr, err)
-		return
+		return nil
 	}
 	log.Printf("Connected to %v", addr)
 
-        // Enable TCP keep-alive
-        if err := conn.SetKeepAlive(true); err != nil {
-                log.Printf("Failed to enable keep-alive for %v: %v", conn.RemoteAddr(), err)
-                conn.Close()
-                return
-        }
-
-        // Set the keep-alive period
-        keepAlivePeriod := 30 * time.Second // You can adjust this value
-        if err := conn.SetKeepAlivePeriod(keepAlivePeriod); err != nil {
-                log.Printf("Failed to set keep-alive period for %v: %v", conn.RemoteAddr(), err)
-                conn.Close()
-                return
-        }
-
-/*
-        // Disable Nagle's algorithm to reduce latency
-        if err := conn.SetNoDelay(true); err != nil {
-                log.Printf("Failed to disable Nagle's algorithm for %v: %v", conn.RemoteAddr(), err)
-                conn.Close()
-                return
-        }
-*/
-	
-	poolLock.Lock()
-	connectionPool = append(connectionPool, conn)
-	poolLock.Unlock()
-}
-
-func getConnectionFromPool() *net.TCPConn {
-	poolLock.Lock()
-	defer poolLock.Unlock()
-
-	// Repopulate the pool if it drops below initial size
-	if len(connectionPool) < len(ips) {
-		log.Println("Repopulating connection pool...")
-		initializePool(targetHost + ":" + strconv.Itoa(targetPort))
-	}
-
-	if len(connectionPool) == 0 {
-		log.Println("No connections available in the pool")
+	// Enable TCP keep-alive
+	if err := conn.SetKeepAlive(true); err != nil {
+		log.Printf("Failed to enable keep-alive for %v: %v", conn.RemoteAddr(), err)
 		return nil
 	}
 
-        log.Println("Current pool members:")
-        for i, conn := range connectionPool {
-                log.Printf("  Member %d: %v", i, conn.RemoteAddr())
+	// Set the keep-alive period
+	keepAlivePeriod := 30 * time.Second // Adjust as needed
+	if err := conn.SetKeepAlivePeriod(keepAlivePeriod); err != nil {
+		log.Printf("Failed to set keep-alive period for %v: %v", conn.RemoteAddr(), err)
+		return nil
+	}
+
+        // Disable Nagle's algorithm to reduce latency
+        if err := conn.SetNoDelay(true); err != nil {
+                log.Printf("Failed to disable Nagle's algorithm for %v: %v", conn.RemoteAddr(), err)
+                return nil
         }
-	
-	conn := connectionPool[rand.Intn(len(connectionPool))]
-	log.Printf("Retrieved connection from pool: %v", conn.RemoteAddr())
+
 	return conn
 }
 
 func initializePool(target string) {
 	emptyConnectionPool()
-	
+
 	hostPort := strings.Split(target, ":")
 	host := hostPort[0]
 	port, err := strconv.Atoi(hostPort[1])
@@ -106,8 +74,8 @@ func initializePool(target string) {
 		log.Fatalf("Invalid port in target %s: %v", target, err)
 	}
 
-	// Update global variables for targetHost and targetPort
-	targetHost = host
+	// Update globals
+	targetHost = host 
 	targetPort = port
 
 	ips, err = net.LookupIP(host)
@@ -117,8 +85,53 @@ func initializePool(target string) {
 
 	log.Printf("Found %d IPs for host %s", len(ips), host)
 	for _, ip := range ips {
-		createConnection(ip, port)
+		if conn := createConnection(ip, port); conn != nil {
+			poolLock.Lock()
+			connectionPool = append(connectionPool, conn)
+			poolLock.Unlock()
+		}
 	}
+}
+
+func getConnectionFromPool() *net.TCPConn {
+	poolLock.Lock()
+	defer poolLock.Unlock()
+
+	if len(connectionPool) == 0 {
+		log.Println("No connections available in pool")
+		return nil
+	}
+
+	// Pick a random connection
+	idx := rand.Intn(len(connectionPool))
+	conn := connectionPool[idx]
+
+	log.Printf("Retrieved connection from pool: %v", conn.RemoteAddr())
+	return conn
+}
+
+func replaceConnectionInPool(badConn *net.TCPConn) {
+	poolLock.Lock()
+	defer poolLock.Unlock()
+
+	for i, conn := range connectionPool {
+		if conn == badConn {
+			// Only replace if it's a pool member
+			newConn := createConnection(badConn.RemoteAddr().(*net.TCPAddr).IP, targetPort)
+			if newConn != nil {
+				connectionPool[i] = newConn
+				log.Printf("Replaced bad connection to %v with %v",
+					badConn.RemoteAddr(), newConn.RemoteAddr())
+			} else {
+				// Remove bad conn if replacement fails
+				connectionPool = append(connectionPool[:i], connectionPool[i+1:]...)
+				log.Printf("Removed bad connection %v", badConn.RemoteAddr())
+			}
+			return
+		}
+	}
+
+	log.Printf("Connection %v not found in pool, not replacing", badConn.RemoteAddr())
 }
 
 func forward(src, dst net.Conn) {
@@ -131,7 +144,7 @@ func forward(src, dst net.Conn) {
 		if err != nil {
 			if err != io.EOF {
 				log.Printf("Failed to read from %v: %v", src.RemoteAddr(), err)
-				initializePool(targetHost + ":" + strconv.Itoa(targetPort))
+				replaceConnectionInPool(src.(*net.TCPConn))
 			}
 			return
 		}
@@ -139,6 +152,7 @@ func forward(src, dst net.Conn) {
 		_, err = dst.Write(buf[:n])
 		if err != nil {
 			log.Printf("Failed to write to %v: %v", dst.RemoteAddr(), err)
+			replaceConnectionInPool(dst.(*net.TCPConn))
 			return
 		}
 	}
