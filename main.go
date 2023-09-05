@@ -109,7 +109,7 @@ func getConnectionFromPool() *net.TCPConn {
 	
 	if len(connectionPool) == 0 {
 		log.Println("No connections available in pool")
-		return nil
+		initializePool(targetHost + ":" + strconv.Itoa(targetPort))
 	}
 
 	// Pick a random connection
