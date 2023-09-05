@@ -56,12 +56,14 @@ func createConnection(ip net.IP, port int) *net.TCPConn {
 		return nil
 	}
 
+	/*
         // Disable Nagle's algorithm to reduce latency
         if err := conn.SetNoDelay(true); err != nil {
                 log.Printf("Failed to disable Nagle's algorithm for %v: %v", conn.RemoteAddr(), err)
                 return nil
         }
-
+	*/
+	
 	return conn
 }
 
