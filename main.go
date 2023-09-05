@@ -122,7 +122,7 @@ func getConnectionFromPool() *net.TCPConn {
 	return conn
 }
 
-func replaceConnectionInPool(badConn *net.TCPConn) {
+func replaceConnectionInPool(closedConn *net.TCPConn) {
 	poolLock.Lock()
 	defer poolLock.Unlock()
 
@@ -131,23 +131,23 @@ func replaceConnectionInPool(badConn *net.TCPConn) {
 	}
 
 	for i, conn := range connectionPool {
-		if conn == badConn {
+		if conn == closedConn {
 			// Only replace if it's a pool member
-			newConn := createConnection(badConn.RemoteAddr().(*net.TCPAddr).IP, targetPort)
+			newConn := createConnection(closedConn.RemoteAddr().(*net.TCPAddr).IP, targetPort)
 			if newConn != nil {
 				connectionPool[i] = newConn
-				log.Printf("Replaced bad connection to %v with %v",
-					badConn.RemoteAddr(), newConn.RemoteAddr())
+				log.Printf("Replaced closed connection to %v with %v",
+					closedConn.RemoteAddr(), newConn.RemoteAddr())
 			} else {
-				// Remove bad conn if replacement fails
+				// Remove closed conn if replacement fails
 				connectionPool = append(connectionPool[:i], connectionPool[i+1:]...)
-				log.Printf("Removed bad connection %v", badConn.RemoteAddr())
+				log.Printf("Removed closed connection %v", closedConn.RemoteAddr())
 			}
 			return
 		}
 	}
 
-	log.Printf("Connection %v not found in pool, not replacing", badConn.RemoteAddr())
+	log.Printf("Connection %v not found in pool, not replacing", closedConn.RemoteAddr())
 }
 
 func forward(src, dst net.Conn) {
