@@ -27,6 +27,30 @@ func createConnection(ip net.IP, port int) {
 	}
 	log.Printf("Connected to %v", addr)
 
+        // Enable TCP keep-alive
+        if err := conn.SetKeepAlive(true); err != nil {
+                log.Printf("Failed to enable keep-alive for %v: %v", conn.RemoteAddr(), err)
+                conn.Close()
+                return
+        }
+
+        // Set the keep-alive period
+        keepAlivePeriod := 30 * time.Second // You can adjust this value
+        if err := conn.SetKeepAlivePeriod(keepAlivePeriod); err != nil {
+                log.Printf("Failed to set keep-alive period for %v: %v", conn.RemoteAddr(), err)
+                conn.Close()
+                return
+        }
+
+/*
+        // Disable Nagle's algorithm to reduce latency
+        if err := conn.SetNoDelay(true); err != nil {
+                log.Printf("Failed to disable Nagle's algorithm for %v: %v", conn.RemoteAddr(), err)
+                conn.Close()
+                return
+        }
+*/
+	
 	poolLock.Lock()
 	connectionPool = append(connectionPool, conn)
 	poolLock.Unlock()
