@@ -18,6 +18,21 @@ var ips []net.IP
 var targetHost string
 var targetPort int
 
+func emptyConnectionPool() {
+       poolLock.Lock()
+       defer poolLock.Unlock()
+
+       for _, conn := range connectionPool {
+               if conn != nil {
+                       conn.Close()
+                       log.Printf("Closed connection to %v", conn.RemoteAddr())
+               }
+       }
+
+       connectionPool = []*net.TCPConn{}
+       log.Println("Connection pool emptied.")
+}
+
 func createConnection(ip net.IP, port int) {
 	addr := net.TCPAddr{IP: ip, Port: port}
 	conn, err := net.DialTCP("tcp", nil, &addr)
@@ -82,6 +97,8 @@ func getConnectionFromPool() *net.TCPConn {
 }
 
 func initializePool(target string) {
+	emptyConnectionPool()
+	
 	hostPort := strings.Split(target, ":")
 	host := hostPort[0]
 	port, err := strconv.Atoi(hostPort[1])
@@ -114,6 +131,7 @@ func forward(src, dst net.Conn) {
 		if err != nil {
 			if err != io.EOF {
 				log.Printf("Failed to read from %v: %v", src.RemoteAddr(), err)
+				initializePool(targetHost + ":" + strconv.Itoa(targetPort))
 			}
 			return
 		}
@@ -121,9 +139,6 @@ func forward(src, dst net.Conn) {
 		_, err = dst.Write(buf[:n])
 		if err != nil {
 			log.Printf("Failed to write to %v: %v", dst.RemoteAddr(), err)
-                        if _, ok := dst.(*net.TCPConn); ok {
-                                initializePool(targetHost + ":" + strconv.Itoa(targetPort))
-                        }
 			return
 		}
 	}
