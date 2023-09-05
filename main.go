@@ -121,6 +121,9 @@ func forward(src, dst net.Conn) {
 		_, err = dst.Write(buf[:n])
 		if err != nil {
 			log.Printf("Failed to write to %v: %v", dst.RemoteAddr(), err)
+                        if _, ok := dst.(*net.TCPConn); ok {
+                                initializePool(targetHost + ":" + strconv.Itoa(targetPort))
+                        }
 			return
 		}
 	}
