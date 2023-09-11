@@ -1,8 +1,22 @@
-# pool_party
+# Go Connection Pool Forwarder
 
    Pool Party          |  Pool Party
 :-------------------------:|:-------------------------:
 ![](https://i.imgur.com/ty2p7hZ.gif)  |  ![](https://media.giphy.com/media/41x8Gui7T1hEsZ0vSF/giphy-downsized-large.gif)
+
+## Overview
+This program is written in Go and sets up a TCP connection pool to a target host. It also listens for incoming connections and forwards traffic from these connections to the target host via the pool.
+
+## Features
+- Connection Pooling
+- Keep-alive for connections
+- Automatic reinitialization of the pool if the size drops
+- Random selection of a connection for forwarding
+- Replacing closed or failed connections
+
+## Dependencies
+- Go (golang)
+- The standard Go library (no external dependencies)
 
 ## Building
 ```
